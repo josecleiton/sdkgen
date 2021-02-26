@@ -1,5 +1,5 @@
 /* eslint-disable no-loop-func */
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync, statSync } from "fs";
 import { dirname, resolve } from "path";
 
 import type { Annotation, Operation, Type } from "./ast";
@@ -181,9 +181,10 @@ export class Parser {
           this.checkCannotHaveAnnotationsHere();
           this.nextToken();
           const pathToken = this.expect(StringLiteralToken);
-          const resolvedPath = resolve(dirname(pathToken.location.filename), `${pathToken.value}.sdkgen`);
 
-          this.lexers.push(new Lexer(readFileSync(resolvedPath).toString(), resolvedPath));
+          if (pathToken.value === "*") this.globOnPath(dirname(pathToken.location.filename));
+          else this.regularStringOnPath(pathToken.location.filename, pathToken.value);
+
           this.nextToken();
         },
         TypeKeywordToken: () => {
@@ -197,6 +198,23 @@ export class Parser {
     ast.warnings = this.warnings;
     analyse(ast);
     return ast;
+  }
+
+  private regularStringOnPath(dirPath: string, filePath: string): void {
+    const resolvedPath = resolve(dirname(dirPath), `${filePath}.sdkgen`);
+
+    this.lexers.push(new Lexer(readFileSync(resolvedPath).toString(), resolvedPath));
+  }
+
+  private globOnPath(resolvedPath: string): void {
+    readdirSync(resolvedPath).forEach(filePath => {
+      // TODO: check if filePath is relative
+      if (statSync(filePath).isDirectory()) {
+        return this.globOnPath(filePath);
+      }
+
+      return this.lexers.push(new Lexer(readFileSync(filePath).toString(), filePath));
+    });
   }
 
   private acceptAnnotations() {
